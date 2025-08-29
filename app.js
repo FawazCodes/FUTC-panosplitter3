@@ -943,44 +943,47 @@
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
         canvas.width = width; canvas.height = height;
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
 
         const stream = canvas.captureStream(fps);
         const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond });
         const chunks = [];
         recorder.ondataavailable = (e) => chunks.push(e.data);
 
-        const totalFrames = duration * fps;
-        let currentFrame = 0;
+        const track = stream.getVideoTracks()[0];
 
-        const drawFrame = () => {
-            const progress = currentFrame / totalFrames;
-            const eased = applyEasing(progress, easing);
-            ctx.clearRect(0, 0, width, height);
+        // Pre-render background layer
+        const bgCanvas = document.createElement('canvas');
+        bgCanvas.width = width; bgCanvas.height = height;
+        const bgCtx = bgCanvas.getContext('2d');
+        bgCtx.imageSmoothingEnabled = true;
+        bgCtx.imageSmoothingQuality = 'high';
+        const bgType = qs('input[name="bg-type"]:checked')?.value || 'blur';
+        if (bgType === 'gradient') {
+            const colors = state.lastGradientPalette.length ? state.lastGradientPalette : extractPaletteKMeans(state.originalImage.element, 4);
+            renderGradientBackground(bgCtx, width, height, colors, DOM.gradientType?.value || 'radial', DOM.gradientBlend?.value || 'normal');
+        } else if (bgType === 'color') {
+            bgCtx.fillStyle = DOM.bgColorPicker?.value || '#111827';
+            bgCtx.fillRect(0, 0, width, height);
+        } else {
+            bgCtx.fillStyle = '#111827';
+            bgCtx.fillRect(0, 0, width, height);
+        }
 
-            const bgType = qs('input[name="bg-type"]:checked')?.value || 'blur';
-            if (bgType === 'gradient') {
-                const colors = state.lastGradientPalette.length ? state.lastGradientPalette : extractPaletteKMeans(state.originalImage.element, 4);
-                renderGradientBackground(ctx, width, height, colors, DOM.gradientType?.value || 'radial', DOM.gradientBlend?.value || 'normal');
-            } else if (bgType === 'color') {
-                ctx.fillStyle = DOM.bgColorPicker?.value || '#111827';
-                ctx.fillRect(0, 0, width, height);
-            } else {
-                ctx.fillStyle = '#111827';
-                ctx.fillRect(0, 0, width, height);
-            }
+        // Pre-render watermark layer
+        const wmCanvas = document.createElement('canvas');
+        wmCanvas.width = width; wmCanvas.height = height;
+        const wmCtx = wmCanvas.getContext('2d');
+        wmCtx.imageSmoothingEnabled = true;
+        wmCtx.imageSmoothingQuality = 'high';
+        const wmSettings = collectWatermarkSettings();
+        applyWatermark(wmCanvas, wmCtx, wmSettings);
+        const hasWatermark = wmSettings && wmSettings.type !== 'none';
 
-            const panProgress = eased < 0.5 ? eased * 2 : 1 - (eased - 0.5) * 2;
-            const maxPanX = Math.max(0, state.originalImage.width - width);
-            const panX = panProgress * maxPanX;
-            ctx.drawImage(state.originalImage.element, panX, 0, width, state.originalImage.height, 0, 0, width, height);
-
-            const wm = collectWatermarkSettings();
-            applyWatermark(canvas, ctx, wm);
-
-            currentFrame++;
-            if (currentFrame < totalFrames) requestAnimationFrame(drawFrame);
-            else setTimeout(() => { try { recorder.stop(); } catch(_){} }, 0);
-        };
+        const startTime = performance.now();
+        const totalDuration = duration * 1000;
+        const frameInterval = 1000 / fps;
 
         return new Promise((resolve, reject) => {
             recorder.onstop = async () => {
@@ -1003,7 +1006,26 @@
             };
             recorder.onerror = reject;
             recorder.start();
-            requestAnimationFrame(drawFrame);
+
+            const intervalId = setInterval(() => {
+                const elapsed = performance.now() - startTime;
+                const progress = Math.min(elapsed / totalDuration, 1);
+                const eased = applyEasing(progress, easing);
+
+                ctx.drawImage(bgCanvas, 0, 0);
+                const panProgress = eased < 0.5 ? eased * 2 : 1 - (eased - 0.5) * 2;
+                const maxPanX = Math.max(0, state.originalImage.width - width);
+                const panX = panProgress * maxPanX;
+                ctx.drawImage(state.originalImage.element, panX, 0, width, state.originalImage.height, 0, 0, width, height);
+                if (hasWatermark) ctx.drawImage(wmCanvas, 0, 0);
+
+                track?.requestFrame();
+
+                if (progress >= 1) {
+                    clearInterval(intervalId);
+                    setTimeout(() => { try { recorder.stop(); } catch(_){} }, 0);
+                }
+            }, frameInterval);
         });
     };
 
