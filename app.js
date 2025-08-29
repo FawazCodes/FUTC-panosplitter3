@@ -340,7 +340,7 @@
 
     const validateImageFile = (file) => {
         if (!file.type.startsWith('image/')) return { valid: false, message: 'Please select a valid image file (JPG, PNG, WebP, AVIF)' };
-        if (file.size > 50 * 1024 * 1024) return { valid: false, message: 'Image file size must be less than 50MB' };
+        if (file.size > 300 * 1024 * 1024) return { valid: false, message: 'Image file size must be less than 300MB' };
         return { valid: true };
     };
 
@@ -348,7 +348,7 @@
         const type = (file && file.type) ? file.type.toLowerCase() : '';
         const name = (file && file.name) ? file.name.toLowerCase() : '';
         if (!type.includes('png') && !name.endsWith('.png')) return { valid: false, message: 'Watermark must be a PNG file' };
-        if (file.size > 10 * 1024 * 1024) return { valid: false, message: 'Watermark file size must be less than 10MB' };
+        if (file.size > 50 * 1024 * 1024) return { valid: false, message: 'Watermark file size must be less than 50MB' };
         return { valid: true };
     };
 
