@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Pano Slicer Pro">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#0f172a">
+    <title>Pano Slicer Pro</title>
+
+    <!-- External Libraries -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.0/FileSaver.min.js"></script>
+
+    <!-- External Stylesheet -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="bg-slate-900 text-slate-100 font-sans antialiased">
+
+    <div id="app" class="relative min-h-screen p-4 sm:p-6 lg:p-8 flex flex-col items-center">
+
+        <!-- Header Controls -->
+        <button id="shortcuts-btn" class="fixed top-4 right-20 z-50 w-12 h-12 rounded-full bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center transition-all duration-300 hover:bg-white/20 hover:scale-110" aria-label="Keyboard shortcuts">
+            <i data-lucide="keyboard" class="w-5 h-5 text-white"></i>
+        </button>
+        <button id="theme-toggle" class="fixed top-4 right-4 z-50 w-12 h-12 rounded-full bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center transition-all duration-300 hover:bg-white/20 hover:scale-110" aria-label="Toggle theme">
+            <svg id="theme-icon-dark" class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path>
+            </svg>
+            <svg id="theme-icon-light" class="w-5 h-5 text-gray-800 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path>
+            </svg>
+        </button>
+
+        <!-- Background Effects -->
+        <div id="aurora-background" class="absolute inset-0 overflow-hidden pointer-events-none z-0">
+            <div id="aurora-orb-1" class="absolute w-96 h-96 rounded-full blur-3xl transition-all duration-1000 ease-out" 
+                 style="background: radial-gradient(circle, rgba(102, 126, 234, 0.25) 0%, rgba(102, 126, 234, 0.1) 40%, transparent 70%); 
+                        left: var(--orb-1-x, 25%); top: var(--orb-1-y, 25%); transform: translate(-50%, -50%);"></div>
+            <div id="aurora-orb-2" class="absolute w-80 h-80 rounded-full blur-3xl transition-all duration-1200 ease-out" 
+                 style="background: radial-gradient(circle, rgba(168, 85, 247, 0.2) 0%, rgba(168, 85, 247, 0.08) 40%, transparent 70%); 
+                        left: var(--orb-2-x, 75%); top: var(--orb-2-y, 75%); transform: translate(-50%, -50%);"></div>
+            <div id="aurora-orb-3" class="absolute w-64 h-64 rounded-full blur-2xl transition-all duration-800 ease-out" 
+                 style="background: radial-gradient(circle, rgba(59, 130, 246, 0.15) 0%, rgba(59, 130, 246, 0.06) 40%, transparent 70%); 
+                        left: var(--orb-3-x, 50%); top: var(--orb-3-y, 50%); transform: translate(-50%, -50%);"></div>
+        </div>
+
+        <main id="main-content" class="w-full max-w-4xl z-10">
+            <!-- Error Message -->
+            <div id="error-message" class="hidden glass-card border-red-500/50 mb-6 p-4" role="alert" aria-live="assertive">
+                <div class="flex items-start justify-between gap-4">
+                    <div class="flex items-start gap-3">
+                        <i data-lucide="alert-circle" class="w-6 h-6 text-red-400 flex-shrink-0"></i>
+                        <div class="space-y-1">
+                            <p class="text-red-300 font-semibold">Something went wrong</p>
+                            <ul id="error-suggestions" class="list-disc list-inside text-slate-300 text-sm space-y-1"></ul>
+                        </div>
+                    </div>
+                    <button id="dismiss-error" class="p-2 rounded-full hover:bg-slate-700/50 transition-colors touch-target" aria-label="Dismiss error">
+                        <i data-lucide="x" class="w-5 h-5 text-slate-400"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Upload Area -->
+            <div id="upload-area" class="glass-card text-center p-8 sm:p-12">
+                <div class="glass-sheen"></div>
+                <div class="border-2 border-dashed border-slate-600/40 rounded-3xl p-8 transition-all duration-300 backdrop-blur-sm">
+                    <div class="flex flex-col items-center justify-center space-y-4">
+                        <div class="w-16 h-16 rounded-3xl flex items-center justify-center bg-slate-700/50 border border-slate-600">
+                           <i data-lucide="upload-cloud" class="w-8 h-8 text-indigo-400"></i>
+                        </div>
+                        <p class="text-lg font-semibold text-slate-200">Drag & drop your panorama here</p>
+                        <p class="text-slate-400">or</p>
+                        <label for="file-input" class="file-input-label action-button cursor-pointer">
+                            <i data-lucide="file-image" class="w-4 h-4 mr-2"></i>
+                            Select File
+                        </label>
+                        <input type="file" id="file-input" class="hidden" accept="image/png, image/jpeg, image/webp, image/avif">
+                        <p class="text-xs text-slate-500 mt-4">Supports JPG, PNG, WebP, & AVIF</p>
+                        <div id="upload-preview" class="upload-preview">
+                            <img id="upload-preview-img" alt="Upload preview" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Preview & Controls -->
+            <div id="preview-container" class="hidden">
+                <div class="glass-card mb-6">
+                    <div class="glass-sheen"></div>
+                    <h2 class="card-header">
+                        <i data-lucide="image" class="w-5 h-5 mr-2"></i>
+                        <span class="gradient-title">Image Preview</span>
+                    </h2>
+                    <div class="p-6">
+                        <div class="flex items-center justify-between mb-4 gap-3">
+                            <div class="flex items-center gap-2 text-slate-400 text-sm min-w-0">
+                                <i data-lucide="file" class="w-4 h-4"></i>
+                                <span id="selected-filename-preview" class="truncate max-w-[60vw]"></span>
+                            </div>
+                            <button id="change-file-btn" class="secondary-button touch-target inline-flex items-center gap-2" type="button">
+                                <i data-lucide="file-up" class="w-4 h-4"></i>
+                                Change File
+                            </button>
+                        </div>
+                        <div class="relative group overflow-hidden rounded-xl">
+                            <img id="preview-img" class="rounded-xl max-w-full h-auto mx-auto shadow-lg select-none" alt="Image Preview">
+                            <div id="preview-zoom-hint" class="absolute bottom-2 right-2 text-xs bg-slate-800/70 border border-slate-600 text-slate-200 px-2 py-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity">Pinch/scroll to zoom</div>
+                            <div id="watermark-grid" class="pointer-events-none absolute inset-0 grid grid-cols-3 grid-rows-3 opacity-0 transition-opacity">
+                                <div class="border border-white/10"></div><div class="border border-white/10"></div><div class="border border-white/10"></div>
+                                <div class="border border-white/10"></div><div class="border border-white/10"></div><div class="border border-white/10"></div>
+                                <div class="border border-white/10"></div><div class="border border-white/10"></div><div class="border border-white/10"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Full View BG Settings -->
+                <div id="full-view-settings" class="glass-card mb-6 collapsible-section mobile-hide">
+                    <div class="glass-sheen"></div>
+                    <div class="collapsible-header" id="full-view-toggle">
+                        <div class="flex items-center">
+                        <i data-lucide="image-play" class="w-5 h-5 mr-2"></i>
+                        <span class="gradient-title">Full View Background</span>
+                        </div>
+                        <i data-lucide="chevron-down" class="w-5 h-5 expand-icon"></i>
+                    </div>
+                    <div class="collapsible-content" id="full-view-content">
+                    <div class="p-6 space-y-6">
+                        <div class="flex items-center justify-between p-4 rounded-2xl bg-slate-800/50 border border-slate-700">
+                            <label for="bg-type-blur" class="font-semibold text-slate-200">Background Type</label>
+                            <div class="radio-group flex items-center gap-4">
+                                <label class="flex items-center gap-2"><input type="radio" name="bg-type" id="bg-type-blur" value="blur" checked> Blur</label>
+                                <label class="flex items-center gap-2"><input type="radio" name="bg-type" id="bg-type-color" value="color"> Color</label>
+                                <label class="flex items-center gap-2"><input type="radio" name="bg-type" id="bg-type-gradient" value="gradient"> Gradient</label>
+                            </div>
+                        </div>
+
+                        <div id="blur-controls" class="space-y-4">
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                    <label for="blur-intensity" class="font-semibold text-slate-200">Blur Radius</label>
+                                    <input type="range" id="blur-intensity" min="0" max="40" value="10" class="custom-range">
+                                </div>
+                                <div>
+                                    <label for="blur-downscale" class="font-semibold text-slate-200">Downscale % (perf)</label>
+                                    <input type="range" id="blur-downscale" min="10" max="100" value="35" class="custom-range">
+                                    <p class="text-xs text-slate-400 mt-1">Lower = faster. We blur a smaller copy and upscale.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="color-controls" class="hidden space-y-4">
+                            <label class="font-semibold text-slate-200">Background Color</label>
+                            <div class="flex items-center gap-4">
+                                <input type="color" id="bg-color-picker" value="#FFFFFF">
+                                <div id="color-palette" class="flex items-center gap-2"></div>
+                            </div>
+                        </div>
+
+                        <div id="gradient-controls" class="hidden space-y-4">
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                <div>
+                                    <label for="gradient-type" class="font-semibold text-slate-200">Gradient Type</label>
+                                    <select id="gradient-type" class="w-full p-2 rounded-lg bg-slate-700/50 border border-slate-600 text-slate-200 focus:border-blue-500 focus:outline-none">
+                                        <option value="radial">Radial</option><option value="angular">Angular</option><option value="linear">Linear</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="gradient-stops" class="font-semibold text-slate-200">Colors</label>
+                                    <input type="number" id="gradient-stops" min="3" max="5" value="4" class="w-full p-2 rounded-lg bg-slate-700/50 border border-slate-600 text-slate-200 focus:border-blue-500 focus:outline-none">
+                                </div>
+                                <div>
+                                    <label for="gradient-blend" class="font-semibold text-slate-200">Blend</label>
+                                    <select id="gradient-blend" class="w-full p-2 rounded-lg bg-slate-700/50 border border-slate-600 text-slate-200 focus:border-blue-500 focus:outline-none">
+                                        <option value="soft-light">Soft Light</option><option value="overlay">Overlay</option><option value="normal" selected>Normal</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-4">
+                                <button id="palette-from-image" class="secondary-button">
+                                    <span class="btn-text flex items-center"><i data-lucide="palette" class="w-4 h-4 mr-2"></i>Use Image Palette</span>
+                                </button>
+                                <div id="gradient-preview" class="flex-1 h-10 rounded-lg border border-slate-700"></div>
+                            </div>
+                        </div>
+
+                        <div class="space-y-4">
+                            <label class="font-semibold text-slate-200">Watermark</label>
+                            <div class="p-4 rounded-2xl bg-slate-800/50 border border-slate-700">
+                                <label class="block text-sm text-slate-300 mb-3">Watermark Type</label>
+                                <div class="radio-group flex items-center gap-4">
+                                    <label class="flex items-center gap-2"><input type="radio" name="watermark-type" value="none" checked class="sr-only"><span class="text-sm">None</span></label>
+                                    <label class="flex items-center gap-2"><input type="radio" name="watermark-type" value="image" class="sr-only"><span class="text-sm">Image</span></label>
+                                    <label class="flex items-center gap-2"><input type="radio" name="watermark-type" value="text" class="sr-only"><span class="text-sm">Text</span></label>
+                                </div>
+                            </div>
+                            <div id="text-watermark-controls" class="hidden space-y-4">
+                                <div class="p-4 rounded-2xl bg-slate-800/50 border border-slate-700">
+                                    <label for="watermark-text" class="block text-sm text-slate-300 mb-2">Watermark Text</label>
+                                    <input type="text" id="watermark-text" placeholder="Enter your watermark text..." class="w-full p-2 rounded-lg bg-slate-700/50 border border-slate-600 text-slate-200 placeholder-slate-400 focus:border-blue-500 focus:outline-none">
+                                </div>
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div class="p-4 rounded-2xl bg-slate-800/50 border border-slate-700">
+                                        <label for="watermark-font-size" class="block text-sm text-slate-300 mb-2">Font Size</label>
+                                        <div class="flex items-center gap-3">
+                                            <input type="range" id="watermark-font-size" min="12" max="72" value="24" class="custom-range flex-1">
+                                            <span id="watermark-font-size-label" class="text-slate-400 w-12 text-right text-sm">24px</span>
+                                        </div>
+                                    </div>
+                                    <div class="p-4 rounded-2xl bg-slate-800/50 border border-slate-700">
+                                        <label for="watermark-text-color" class="block text-sm text-slate-300 mb-2">Text Color</label>
+                                        <input type="color" id="watermark-text-color" value="#FFFFFF" class="w-full h-10 rounded-lg border border-slate-600 bg-slate-700/50">
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-2 gap-4">
+                                    <div class="p-4 rounded-2xl bg-slate-800/50 border border-slate-700">
+                                        <label for="watermark-font-weight" class="block text-sm text-slate-300 mb-2">Font Weight</label>
+                                        <select id="watermark-font-weight" class="w-full p-2 rounded-lg bg-slate-700/50 border border-slate-600 text-slate-200">
+                                            <option value="normal">Normal</option><option value="bold" selected>Bold</option><option value="bolder">Extra Bold</option>
+                                        </select>
+                                    </div>
+                                    <div class="p-4 rounded-2xl bg-slate-800/50 border border-slate-700">
+                                        <label for="watermark-text-stroke" class="block text-sm text-slate-300 mb-2">Text Outline</label>
+                                        <select id="watermark-text-stroke" class="w-full p-2 rounded-lg bg-slate-700/50 border border-slate-600 text-slate-200">
+                                            <option value="none">None</option><option value="thin" selected>Thin</option><option value="thick">Thick</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div class="p-4 rounded-2xl bg-slate-800/50 border border-slate-700">
+                                        <label for="text-watermark-opacity" class="block text-sm text-slate-300 mb-2">Opacity</label>
+                                        <div class="flex items-center gap-3">
+                                            <input type="range" id="text-watermark-opacity" min="10" max="100" value="70" class="custom-range flex-1">
+                                            <span id="text-watermark-opacity-label" class="text-slate-400 w-12 text-right text-sm">70%</span>
+                                        </div>
+                                    </div>
+                                    <div class="p-4 rounded-2xl bg-slate-800/50 border border-slate-700">
+                                        <label for="text-watermark-size" class="block text-sm text-slate-300 mb-2">Size</label>
+                                        <div class="flex items-center gap-3">
+                                            <input type="range" id="text-watermark-size" min="5" max="50" value="15" class="custom-range flex-1">
+                                            <span id="text-watermark-size-label" class="text-slate-400 w-12 text-right text-sm">15%</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="p-4 rounded-2xl bg-slate-800/50 border border-slate-700">
+                                    <label class="block text-sm text-slate-300 mb-3">Position</label>
+                                    <div class="radio-group grid grid-cols-3 gap-2">
+                                        <label class="flex items-center justify-center p-2 rounded-lg border border-slate-600"><input type="radio" name="text-watermark-position" value="top-left" class="sr-only"><i data-lucide="corner-up-left" class="w-4 h-4"></i></label>
+                                        <label class="flex items-center justify-center p-2 rounded-lg border border-slate-600"><input type="radio" name="text-watermark-position" value="top-center" class="sr-only"><i data-lucide="arrow-up" class="w-4 h-4"></i></label>
+                                        <label class="flex items-center justify-center p-2 rounded-lg border border-slate-600"><input type="radio" name="text-watermark-position" value="top-right" class="sr-only"><i data-lucide="corner-up-right" class="w-4 h-4"></i></label>
+                                        <label class="flex items-center justify-center p-2 rounded-lg border border-slate-600"><input type="radio" name="text-watermark-position" value="center-left" class="sr-only"><i data-lucide="arrow-left" class="w-4 h-4"></i></label>
+                                        <label class="flex items-center justify-center p-2 rounded-lg border border-slate-600"><input type="radio" name="text-watermark-position" value="center" class="sr-only"><i data-lucide="plus" class="w-4 h-4"></i></label>
+                                        <label class="flex items-center justify-center p-2 rounded-lg border border-slate-600"><input type="radio" name="text-watermark-position" value="center-right" class="sr-only"><i data-lucide="arrow-right" class="w-4 h-4"></i></label>
+                                        <label class="flex items-center justify-center p-2 rounded-lg border border-slate-600"><input type="radio" name="text-watermark-position" value="bottom-left" class="sr-only"><i data-lucide="corner-down-left" class="w-4 h-4"></i></label>
+                                        <label class="flex items-center justify-center p-2 rounded-lg border border-slate-600"><input type="radio" name="text-watermark-position" value="bottom-center" class="sr-only"><i data-lucide="arrow-down" class="w-4 h-4"></i></label>
+                                        <label class="flex items-center justify-center p-2 rounded-lg border border-slate-600 checked"><input type="radio" name="text-watermark-position" value="bottom-right" checked class="sr-only"><i data-lucide="corner-down-right" class="w-4 h-4"></i></label>
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="image-watermark-controls" class="hidden">
+                                <div class="p-4 rounded-2xl bg-slate-800/50 border border-slate-700">
+                                    <label for="watermark-input" class="block text-sm text-slate-300 mb-2">Upload PNG Watermark</label>
+                                    <div class="flex items-center gap-3">
+                                        <input type="file" id="watermark-input" accept="image/png" class="hidden">
+                                        <button id="watermark-upload-btn" class="secondary-button text-sm px-3 py-2"><i data-lucide="upload" class="w-4 h-4 mr-2"></i>Choose PNG</button>
+                                        <span id="watermark-filename" class="text-sm text-slate-400">No file selected</span>
+                                        <button id="watermark-remove-btn" class="hidden text-red-400 hover:text-red-300 transition-colors"><i data-lucide="x" class="w-4 h-4"></i></button>
+                                    </div>
+                                    <div id="watermark-preview" class="hidden mt-3 p-2 rounded-lg bg-slate-700/50 border border-slate-600">
+                                        <img id="watermark-preview-img" class="max-w-20 max-h-20 object-contain" alt="Watermark preview">
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="watermark-settings" class="hidden space-y-4">
+                                <div class="p-4 rounded-2xl bg-slate-800/50 border border-slate-700">
+                                    <label for="watermark-opacity" class="block text-sm text-slate-300 mb-2">Opacity</label>
+                                    <div class="flex items-center gap-3">
+                                        <input type="range" id="watermark-opacity" min="10" max="100" value="70" class="custom-range flex-1">
+                                        <span id="watermark-opacity-label" class="text-slate-400 w-12 text-right text-sm">70%</span>
+                                    </div>
+                                </div>
+                                <div class="p-4 rounded-2xl bg-slate-800/50 border border-slate-700">
+                                    <label for="watermark-size" class="block text-sm text-slate-300 mb-2">Size</label>
+                                    <div class="flex items-center gap-3">
+                                        <input type="range" id="watermark-size" min="5" max="50" value="15" class="custom-range flex-1">
+                                        <span id="watermark-size-label" class="text-slate-400 w-12 text-right text-sm">15%</span>
+                                    </div>
+                                </div>
+                                <div class="p-4 rounded-2xl bg-slate-800/50 border border-slate-700">
+                                    <label class="block text-sm text-slate-300 mb-3">Position</label>
+                                    <div class="radio-group grid grid-cols-3 gap-2">
+                                        <label class="flex items-center justify-center p-2 rounded-lg border border-slate-600"><input type="radio" name="watermark-position" value="top-left" class="sr-only"><i data-lucide="corner-up-left" class="w-4 h-4"></i></label>
+                                        <label class="flex items-center justify-center p-2 rounded-lg border border-slate-600"><input type="radio" name="watermark-position" value="top-center" class="sr-only"><i data-lucide="arrow-up" class="w-4 h-4"></i></label>
+                                        <label class="flex items-center justify-center p-2 rounded-lg border border-slate-600"><input type="radio" name="watermark-position" value="top-right" class="sr-only"><i data-lucide="corner-up-right" class="w-4 h-4"></i></label>
+                                        <label class="flex items-center justify-center p-2 rounded-lg border border-slate-600"><input type="radio" name="watermark-position" value="center-left" class="sr-only"><i data-lucide="arrow-left" class="w-4 h-4"></i></label>
+                                        <label class="flex items-center justify-center p-2 rounded-lg border border-slate-600"><input type="radio" name="watermark-position" value="center" class="sr-only"><i data-lucide="plus" class="w-4 h-4"></i></label>
+                                        <label class="flex items-center justify-center p-2 rounded-lg border border-slate-600"><input type="radio" name="watermark-position" value="center-right" class="sr-only"><i data-lucide="arrow-right" class="w-4 h-4"></i></label>
+                                        <label class="flex items-center justify-center p-2 rounded-lg border border-slate-600"><input type="radio" name="watermark-position" value="bottom-left" class="sr-only"><i data-lucide="corner-down-left" class="w-4 h-4"></i></label>
+                                        <label class="flex items-center justify-center p-2 rounded-lg border border-slate-600"><input type="radio" name="watermark-position" value="bottom-center" class="sr-only"><i data-lucide="arrow-down" class="w-4 h-4"></i></label>
+                                        <label class="flex items-center justify-center p-2 rounded-lg border border-slate-600 checked"><input type="radio" name="watermark-position" value="bottom-right" checked class="sr-only"><i data-lucide="corner-down-right" class="w-4 h-4"></i></label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Slicing Controls -->
+                <div id="controls" class="glass-card mobile-hide">
+                    <div class="glass-sheen"></div>
+                    <h2 class="card-header">
+                        <i data-lucide="sliders-horizontal" class="w-5 h-5 mr-2"></i>
+                        <span class="gradient-title">Slicing Settings</span>
+                    </h2>
+                    <div class="p-6 space-y-6">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                            <div class="info-box"><span class="text-slate-400">Original Size</span><strong id="original-size" class="font-mono">...</strong></div>
+                            <div class="info-box"><span class="text-slate-400">Scaled Size</span><strong id="scaled-size" class="font-mono">...</strong></div>
+                             <div class="info-box"><span class="text-slate-400">Slice Count</span><strong id="slice-count" class="font-mono">...</strong></div>
+                            <div class="info-box"><span class="text-slate-400">Slice Resolution</span><strong id="slice-resolution" class="font-mono">...</strong></div>
+                        </div>
+                        <div class="flex items-center justify-between p-4 rounded-2xl bg-slate-800/50 border border-slate-700">
+                              <div>
+                                  <label for="high-res-toggle" class="font-semibold text-slate-200">High-Resolution Mode</label>
+                                  <p class="text-xs text-slate-400 mt-1">Use original image height for maximum quality</p>
+                              </div>
+                            <label class="switch"><input type="checkbox" id="high-res-toggle" checked><span class="slider"></span></label>
+                        </div>
+                        <div class="flex flex-col sm:flex-row gap-4 pt-4 border-t border-slate-700/50">
+                            <button id="reset-btn" class="secondary-button w-full sm:w-auto"><i data-lucide="rotate-ccw" class="w-4 h-4 mr-2"></i>Reset</button>
+                            <button id="process-btn" class="action-button flex-1"><span class="btn-text flex items-center justify-center"><i data-lucide="sparkles" class="w-4 h-4 mr-2"></i>Generate Slices</span></button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Panning Video Settings -->
+                <div id="video-settings" class="glass-card mt-6 collapsible-section mobile-hide">
+                    <div class="glass-sheen"></div>
+                    <div class="collapsible-header" id="video-toggle">
+                        <div class="flex items-center">
+                            <i data-lucide="video" class="w-5 h-5 mr-2"></i>
+                            <span class="gradient-title">Panning Video</span>
+                        </div>
+                        <i data-lucide="chevron-down" class="w-5 h-5 expand-icon"></i>
+                    </div>
+                    <div class="collapsible-content" id="video-content">
+                        <div class="p-6 space-y-6">
+                            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mobile-grid">
+                                <div class="p-4 rounded-2xl bg-slate-800/50 border border-slate-700">
+                                    <label for="video-format" class="font-semibold text-slate-200 flex items-center gap-2"><i data-lucide="file-video" class="w-4 h-4"></i>Format</label>
+                                    <select id="video-format" class="mt-2 w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2"><option value="webm" selected>WebM (fastest)</option><option value="mp4">MP4 H.264 (in-browser)</option></select>
+                                    <p class="text-xs text-slate-400 mt-2">MP4 tries native recording when available; otherwise transcodes in-browser</p>
+                                </div>
+                                <div class="p-4 rounded-2xl bg-slate-800/50 border border-slate-700">
+                                    <label for="video-easing" class="font-semibold text-slate-200 flex items-center gap-2"><i data-lucide="activity" class="w-4 h-4"></i>Easing</label>
+                                    <select id="video-easing" class="mt-2 w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2"><option value="linear" selected>Linear</option><option value="ease">Ease</option><option value="ease-in">Ease In</option><option value="ease-out">Ease Out</option><option value="ease-in-out">Ease In-Out</option><option value="smooth">Smooth</option><option value="bounce">Bounce</option></select>
+                                    <p id="easing-description" class="text-xs text-slate-400 mt-2">Constant speed throughout</p>
+                                </div>
+                                <div class="p-4 rounded-2xl bg-slate-800/50 border border-slate-700">
+                                    <label for="video-duration" class="font-semibold text-slate-200 flex items-center gap-2"><i data-lucide="timer" class="w-4 h-4"></i>Duration (s)</label>
+                                    <input id="video-duration" type="number" min="2" max="120" step="1" value="10" class="mt-2 w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2" />
+                                    <p class="text-xs text-slate-400 mt-2">Left → right → left across the whole image</p>
+                                </div>
+                                <div class="p-4 rounded-2xl bg-slate-800/50 border border-slate-700">
+                                    <label for="video-fps" class="font-semibold text-slate-200 flex items-center gap-2"><i data-lucide="zap" class="w-4 h-4"></i>FPS</label>
+                                    <input id="video-fps" type="number" min="10" max="60" step="1" value="30" class="mt-2 w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2" />
+                                    <p class="text-xs text-slate-400 mt-2">Higher FPS = smoother, larger file</p>
+                                </div>
+                                <div class="p-4 rounded-2xl bg-slate-800/50 border border-slate-700 lg:col-span-2 xl:col-span-1">
+                                    <label for="video-quality" class="font-semibold text-slate-200 flex items-center gap-2"><i data-lucide="sliders" class="w-4 h-4"></i>Quality</label>
+                                    <div class="mt-2 flex items-center gap-3">
+                                        <input id="video-quality" type="range" min="10" max="100" step="5" value="80" class="custom-range flex-1 min-w-0" />
+                                        <span id="video-quality-label" class="text-slate-400 w-20 text-right text-sm whitespace-nowrap">≈ 8 Mbps</span>
+                                    </div>
+                                    <p class="text-xs text-slate-400 mt-2">Controls bitrate. Higher = cleaner, larger file</p>
+                                </div>
+                            </div>
+                            <div class="flex flex-col sm:flex-row gap-4 pt-2">
+                                <button id="generate-video-btn" class="action-button flex-1">
+                                    <span class="btn-text flex items-center justify-center"><i data-lucide="play-circle" class="w-4 h-4 mr-2"></i>Generate Panning Video</span>
+                                    <span class="btn-loader hidden"></span>
+                                </button>
+                            </div>
+                            <p class="text-xs text-slate-500">Exports without background blur/color. WebM is fastest. MP4 is done in-browser via native recording when possible or in-browser transcoding.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Result Area -->
+            <div id="result-container" class="hidden mt-8">
+                <div class="glass-card">
+                    <div class="glass-sheen"></div>
+                    <div class="card-header flex-col sm:flex-row">
+                        <div class="flex items-center mb-4 sm:mb-0"><i data-lucide="check-circle" class="w-5 h-5 mr-2 text-emerald-400"></i><span class="gradient-title">Processing Complete!</span></div>
+                        <div class="flex flex-col sm:flex-row gap-3">
+                            <button id="download-btn" class="action-button"><span class="btn-text flex items-center"><i data-lucide="download" class="w-4 h-4 mr-2"></i>Download All (.zip)</span><span class="btn-loader hidden"></span></button>
+                            <button id="process-another-btn" class="secondary-button"><span class="btn-text flex items-center"><i data-lucide="image-plus" class="w-4 h-4 mr-2"></i>Process Another Image</span></button>
+                        </div>
+                    </div>
+                    <div id="slices-preview" class="p-6 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4"></div>
+                    <div class="px-6 pb-6 text-xs text-slate-500">Tip: Click any image to view it larger. Use the copy button in the top-right of each tile to copy directly to your clipboard.</div>
+                </div>
+                <div id="video-result-card" class="hidden glass-card mt-6">
+                    <div class="glass-sheen"></div>
+                    <div class="card-header flex-col sm:flex-row">
+                        <div class="flex items-center"><i data-lucide="film" class="w-5 h-5 mr-2 text-indigo-400"></i><span class="gradient-title">Panning Video Ready</span></div>
+                        <button id="download-video-btn" class="action-button mt-4 sm:mt-0"><span class="btn-text flex items-center"><i data-lucide="download" class="w-4 h-4 mr-2"></i>Download Video</span><span class="btn-loader hidden"></span></button>
+                    </div>
+                    <div class="p-6">
+                        <video id="panning-video" class="rounded-xl w-full h-auto shadow-lg" controls playsinline></video>
+                        <p class="text-xs text-slate-500 mt-3">Format: <span id="video-format-label">WebM</span></p>
+                    </div>
+                </div>
+            </div>
+        </main>
+        
+        <footer class="w-full max-w-4xl text-center mt-12 text-slate-500 text-sm z-10">
+            <p>This project was originally a fork of FUTC's work, but the codebase has since been completely overhauled.<br>All processing happens locally in your browser.</p>
+        </footer>
+    </div>
+
+    <!-- Modals and Overlays -->
+    <div id="loading-overlay" class="fixed inset-0 bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center z-50 transition-opacity duration-300 opacity-0 pointer-events-none">
+        <div class="glass-card p-8 max-w-md w-full mx-4">
+            <div class="glass-sheen"></div>
+            <div class="text-center space-y-4">
+                <div class="loader mx-auto"></div>
+                <p id="loading-text" class="text-lg text-slate-300 font-medium">Processing...</p>
+                <div id="progress-container" class="progress-container hidden"><div id="progress-bar" class="progress-bar" style="width: 0%"></div></div>
+                <p id="progress-text" class="text-sm text-slate-400 hidden">Step 1 of 4</p>
+            </div>
+        </div>
+    </div>
+    <div id="success-overlay" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex flex-col items-center justify-center z-50 transition-opacity duration-300 opacity-0 pointer-events-none">
+        <div class="success-checkmark"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path class="checkmark-path" d="M20 6L9 17l-5-5"/></svg></div>
+        <p class="mt-4 text-lg text-white font-medium">Complete!</p>
+    </div>
+    <button id="mobile-fab" class="mobile-fab" aria-label="Open Settings"><svg data-lucide="settings" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><circle cx="12" cy="12" r="3"></circle></svg></button>
+    <div id="bottom-sheet-backdrop" class="bottom-sheet-backdrop"></div>
+    <div id="bottom-sheet" class="bottom-sheet">
+        <div class="bottom-sheet-handle" id="bottom-sheet-handle"></div>
+        <div class="bottom-sheet-content">
+            <div class="bottom-sheet-section"><h3><svg data-lucide="sliders-horizontal"><line x1="21" y1="4" x2="14" y2="4"></line><line x1="10" y1="4" x2="3" y2="4"></line><line x1="21" y1="12" x2="12" y2="12"></line><line x1="8" y1="12" x2="3" y2="12"></line><line x1="21" y1="20" x2="16" y2="20"></line><line x1="12" y1="20" x2="3" y2="20"></line><circle cx="12" cy="4" r="2"></circle><circle cx="10" cy="12" r="2"></circle><circle cx="14" cy="20" r="2"></circle></svg>Slicing Settings</h3><div id="mobile-slicing-content"></div></div>
+            <div class="bottom-sheet-section"><h3><svg data-lucide="image-play"><path d="m15 10-4 4 6 3-6 3v-6"></path><rect x="3" y="3" width="18" height="18" rx="2"></rect></svg>Full View Background</h3><div id="mobile-background-content"></div></div>
+            <div class="bottom-sheet-section"><h3><svg data-lucide="video"><path d="m22 8-6 4 6 4V8Z"></path><rect width="14" height="12" x="2" y="6" rx="2" ry="2"></rect></svg>Panning Video</h3><div id="mobile-video-content"></div></div>
+        </div>
+    </div>
+    <div id="lightbox" class="lightbox">
+        <div class="lightbox-content">
+            <img id="lightbox-image" class="lightbox-image" alt="" />
+            <button id="lightbox-prev" class="lightbox-nav prev" aria-label="Previous image"><svg data-lucide="chevron-left"><polyline points="15,18 9,12 15,6"></polyline></svg></button>
+            <button id="lightbox-next" class="lightbox-nav next" aria-label="Next image"><svg data-lucide="chevron-right"><polyline points="9,18 15,12 9,6"></polyline></svg></button>
+            <button id="lightbox-close" class="lightbox-close" aria-label="Close lightbox"><svg data-lucide="x"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+            <div id="lightbox-info" class="lightbox-info">
+                <div><span id="lightbox-title"></span><span id="lightbox-resolution"></span></div>
+                <a id="lightbox-download" class="lightbox-download" download><svg data-lucide="download"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7,10 12,15 17,10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>Download This Slice</a>
+            </div>
+        </div>
+    </div>
+    <div id="shortcuts-modal" class="lightbox" aria-hidden="true">
+        <div class="lightbox-content" role="dialog" aria-modal="true" aria-labelledby="shortcuts-title">
+            <div class="glass-card p-6 max-w-lg w-[90vw]">
+                <div class="glass-sheen"></div>
+                <div class="flex items-center justify-between mb-4">
+                    <h3 id="shortcuts-title" class="text-lg font-semibold gradient-title">Keyboard Shortcuts</h3>
+                    <button id="shortcuts-close" class="lightbox-close" aria-label="Close"><svg data-lucide="x"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm text-slate-300">
+                    <div class="flex items-center justify-between bg-white/5 rounded-lg p-3 border border-white/10"><span>Upload Image</span><kbd>U</kbd></div>
+                    <div class="flex items-center justify-between bg-white/5 rounded-lg p-3 border border-white/10"><span>Generate Slices</span><kbd>G</kbd></div>
+                    <div class="flex items-center justify-between bg-white/5 rounded-lg p-3 border border-white/10"><span>Generate Video</span><kbd>V</kbd></div>
+                    <div class="flex items-center justify-between bg-white/5 rounded-lg p-3 border border-white/10"><span>Open Settings (Mobile)</span><kbd>F</kbd></div>
+                    <div class="flex items-center justify-between bg-white/5 rounded-lg p-3 border border-white/10"><span>Show Shortcuts</span><kbd>?</kbd></div>
+                    <div class="flex items-center justify-between bg-white/5 rounded-lg p-3 border border-white/10"><span>Close/Back</span><kbd>Esc</kbd></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- External Script -->
+    <script src="app.js" defer></script>
+</body>
+</html>
