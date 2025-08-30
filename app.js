@@ -414,28 +414,54 @@
 
     const updateImageDetails = () => {
         if (!state.originalImage) return;
-        const { scaledWidth, scaledHeight, sliceCount, sliceWidth, sliceHeight } = calculateOptimalScaling(state.originalImage.width, state.originalImage.height, DOM.highResToggle?.checked || false);
+        const { scaledWidth, scaledHeight, sliceCount, sliceWidth, sliceHeight } = calculateOptimalScaling(state.originalImage.width, state.originalImage.height);
         DOM.originalSizeText.textContent = `${state.originalImage.width}px × ${state.originalImage.height}px`;
-        DOM.scaledSizeText.textContent = `${scaledWidth}px × ${scaledHeight}px`;
+        DOM.scaledSizeText.textContent = `${scaledWidth}px × ${scaledHeight}px (Full Resolution)`;
         DOM.sliceCountText.textContent = sliceCount;
         DOM.sliceResolutionText.textContent = `${sliceWidth}px × ${sliceHeight}px`;
     };
 
-    const calculateOptimalScaling = (originalWidth, originalHeight, highResMode) => {
-        let sliceHeight = highResMode ? originalHeight : STANDARD_HEIGHT;
-        let sliceWidth = Math.round(sliceHeight * ASPECT_RATIO);
-        const scaleFactor = sliceHeight / originalHeight;
-        const baseScaledWidth = Math.round(originalWidth * scaleFactor);
-        const fullSlices = Math.floor(baseScaledWidth / sliceWidth);
-        const remainingWidth = baseScaledWidth - (fullSlices * sliceWidth);
+    const calculateOptimalScaling = (originalWidth, originalHeight) => {
+        // Always use original image height for maximum resolution
+        // This ensures we maintain the highest possible quality for all slices
+        const sliceHeight = originalHeight;
+        
+        // Calculate ideal slice width based on aspect ratio
+        const idealSliceWidth = Math.round(sliceHeight * ASPECT_RATIO);
+        
+        // Calculate how many full slices we can fit
+        const fullSlices = Math.floor(originalWidth / idealSliceWidth);
+        const remainingWidth = originalWidth - (fullSlices * idealSliceWidth);
+        
+        // Determine optimal slice count
         let finalSliceCount;
-        if (fullSlices < MIN_SLICES) finalSliceCount = MIN_SLICES; 
-        else if (remainingWidth > (sliceWidth / 2) && fullSlices < 10) finalSliceCount = fullSlices + 1; 
-        else finalSliceCount = Math.min(fullSlices, 10);
-        const finalScaledWidth = finalSliceCount * sliceWidth;
-        const adjustedScaleFactor = finalScaledWidth / originalWidth;
-        const finalScaledHeight = Math.round(originalHeight * adjustedScaleFactor);
-        return { scaledWidth: finalScaledWidth, scaledHeight: finalScaledHeight, sliceCount: finalSliceCount, sliceWidth, sliceHeight: finalScaledHeight };
+        if (fullSlices < MIN_SLICES) {
+            // If we can't fit minimum slices, use minimum and adjust slice width
+            finalSliceCount = MIN_SLICES;
+        } else if (remainingWidth > (idealSliceWidth * 0.3) && fullSlices < 10) {
+            // If remaining width is significant (>30% of slice width), add one more slice
+            finalSliceCount = fullSlices + 1;
+        } else {
+            // Use the number of full slices we can fit, capped at 10
+            finalSliceCount = Math.min(fullSlices, 10);
+        }
+        
+        // Calculate actual slice width to evenly distribute the image
+        // This ensures each slice gets an equal portion of the original image
+        const actualSliceWidth = Math.round(originalWidth / finalSliceCount);
+        
+        // Calculate final dimensions
+        // We maintain the original image dimensions for maximum quality
+        const finalScaledWidth = originalWidth; // Use full original width
+        const finalScaledHeight = sliceHeight; // Always use original height
+        
+        return { 
+            scaledWidth: finalScaledWidth, 
+            scaledHeight: finalScaledHeight, 
+            sliceCount: finalSliceCount, 
+            sliceWidth: actualSliceWidth, 
+            sliceHeight: finalScaledHeight 
+        };
     };
 
     const processImageWithProgress = async () => {
@@ -447,16 +473,20 @@
         updateProgress(12, 'Calculating optimal slice parameters...');
         await new Promise(r => setTimeout(r, 100));
         
-        const { scaledWidth, scaledHeight, sliceCount, sliceWidth, sliceHeight } = calculateOptimalScaling(state.originalImage.width, state.originalImage.height, DOM.highResToggle?.checked || false);
+        const { scaledWidth, scaledHeight, sliceCount, sliceWidth, sliceHeight } = calculateOptimalScaling(state.originalImage.width, state.originalImage.height);
         
         updateProgress(25, 'Preparing rendering canvas...');
+        // Use original image dimensions for maximum quality
+        // This ensures we maintain the highest possible resolution throughout the process
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
-        canvas.width = scaledWidth;
-        canvas.height = scaledHeight;
+        canvas.width = state.originalImage.width;
+        canvas.height = state.originalImage.height;
         
         updateProgress(30, 'Rendering base image...');
-        ctx.drawImage(state.originalImage.element, 0, 0, scaledWidth, scaledHeight);
+        // Draw original image at full resolution
+        // No downscaling - we work with the original image at its native resolution
+        ctx.drawImage(state.originalImage.element, 0, 0, state.originalImage.width, state.originalImage.height);
         
         state.slicedImages = [];
         const wmSettingsSlices = collectWatermarkSettings();
@@ -469,7 +499,21 @@
             
             const baseProgress = 35 + (i / sliceCount) * 30;
             updateProgress(baseProgress, `Rendering slice ${i + 1} of ${sliceCount}...`);
-            sliceCtx.drawImage(canvas, i * sliceWidth, 0, sliceWidth, scaledHeight, 0, 0, sliceWidth, sliceHeight);
+            
+            // Calculate source coordinates for this slice
+            // This ensures we extract the correct portion from the original image
+            const sourceX = i * sliceWidth;
+            const sourceY = 0;
+            const sourceWidth = Math.min(sliceWidth, state.originalImage.width - sourceX);
+            const sourceHeight = state.originalImage.height;
+            
+            // Draw the slice from the original image at full resolution
+            // This preserves the original image quality in each slice
+            sliceCtx.drawImage(
+                canvas, 
+                sourceX, sourceY, sourceWidth, sourceHeight, 
+                0, 0, sliceWidth, sliceHeight
+            );
             
             if (wmSettingsSlices.type !== 'none') {
                 updateProgress(baseProgress + 2, `Adding watermark to slice ${i + 1}...`);
@@ -477,7 +521,12 @@
             }
             
             updateProgress(baseProgress + 5, `Converting slice ${i + 1} to PNG...`);
-            state.slicedImages.push({ dataURL: sliceCanvas.toDataURL(EXPORT_TYPE), number: i + 1, width: sliceWidth, height: sliceHeight });
+            state.slicedImages.push({ 
+                dataURL: sliceCanvas.toDataURL(EXPORT_TYPE), 
+                number: i + 1, 
+                width: sliceWidth, 
+                height: sliceHeight 
+            });
             if (i % 3 === 0) await new Promise(r => setTimeout(r, 30));
         }
         
@@ -494,7 +543,7 @@
 
     const updateFullViewPreview = () => {
         if (!state.originalImage) return;
-        const { sliceWidth, sliceHeight } = calculateOptimalScaling(state.originalImage.width, state.originalImage.height, DOM.highResToggle?.checked || false);
+        const { sliceWidth, sliceHeight } = calculateOptimalScaling(state.originalImage.width, state.originalImage.height);
         createFullViewImage(sliceWidth, sliceHeight);
         const fullViewElement = qs('.full-view-item img');
         if (fullViewElement) fullViewElement.src = state.fullViewImage.dataURL;
@@ -1088,13 +1137,19 @@
 
     const computeVideoViewport = () => {
         if (!state.originalImage) return { width: Math.round(STANDARD_HEIGHT * ASPECT_RATIO), height: STANDARD_HEIGHT };
-        const desiredHeight = (DOM.highResToggle?.checked ? state.originalImage.height : Math.min(STANDARD_HEIGHT, state.originalImage.height));
-        let height = Math.max(1, Math.floor(desiredHeight));
-        let width = Math.max(1, Math.floor(height * ASPECT_RATIO));
+        
+        // Always use original image height for maximum resolution
+        // This ensures videos maintain the highest possible quality
+        const height = state.originalImage.height;
+        let width = Math.round(height * ASPECT_RATIO);
+        
+        // If calculated width exceeds original image width, adjust proportionally
+        // We maintain the original height to preserve maximum resolution
         if (width > state.originalImage.width) {
             width = state.originalImage.width;
-            height = Math.floor(width / ASPECT_RATIO);
+            // Don't adjust height - keep original for maximum resolution
         }
+        
         return { width, height };
     };
 
@@ -1243,7 +1298,8 @@
         if (DOM.lightboxPrev) DOM.lightboxPrev.addEventListener('click', prevLightboxImage);
         if (DOM.lightboxNext) DOM.lightboxNext.addEventListener('click', nextLightboxImage);
 
-        DOM.highResToggle.addEventListener('change', () => { if (state.originalImage) { updateImageDetails(); updateQualityLabel(); } });
+        // High-res toggle is no longer needed since we always use maximum resolution
+        // DOM.highResToggle.addEventListener('change', () => { if (state.originalImage) { updateImageDetails(); updateQualityLabel(); } });
 
         // Background type change handlers
         qsa('input[name="bg-type"]').forEach(radio => {
